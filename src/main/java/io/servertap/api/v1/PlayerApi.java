@@ -4,9 +4,13 @@ import de.tr7zw.nbtapi.NBTFile;
 import io.javalin.http.*;
 import io.javalin.openapi.*;
 import io.servertap.Constants;
+import io.servertap.ServerTapMain;
 import io.servertap.api.v1.models.ItemStack;
+import io.servertap.api.v1.models.MessageResponse;
 import io.servertap.api.v1.models.Player;
+import io.servertap.utils.ServerExecCommandSender;
 import io.servertap.utils.pluginwrappers.EconomyWrapper;
+import org.apache.commons.lang.StringUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
@@ -15,15 +19,21 @@ import org.bukkit.World;
 import java.io.File;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 public class PlayerApi {
     private final EconomyWrapper economy;
     private final Logger log;
+    private final ServerTapMain main;
 
-    public PlayerApi(Logger log, EconomyWrapper economy) {
+    public PlayerApi(ServerTapMain main, Logger log, EconomyWrapper economy) {
         this.economy = economy;
+        this.main = main;
         this.log = log;
     }
 
@@ -250,5 +260,361 @@ public class PlayerApi {
             }
         }
 
+    }
+
+    @OpenApi(
+            path = "/v1/players/action",
+            methods = {HttpMethod.POST},
+            summary = "Does a simple action to a player",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            requestBody = @OpenApiRequestBody(
+                    required = true,
+                    content = {
+                            @OpenApiContent(
+                                    mimeType = "application/x-www-form-urlencoded",
+                                    properties = {
+                                            @OpenApiContentProperty(name = "playerName", type = "string"),
+                                            @OpenApiContentProperty(name = "playerAction", type = "string")
+                                    }
+                            )
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(type = "application/json"))
+            }
+    )
+    public void simpleAction(Context ctx) {
+        String playerName = ctx.formParam("playerName");
+        String playerActionStr = ctx.formParam("playerAction").toLowerCase();
+        ArrayList<String> arr = new ArrayList<String>(5);
+        arr.add("mute");
+        arr.add("unmute");
+        arr.add("unban");
+        arr.add("getplayerconsumables");
+        arr.add("apigetplayerdata");
+        if (!arr.contains(playerActionStr)) {
+            throw new BadRequestResponse(playerActionStr + " command not found");
+        }
+        String command = playerActionStr + " " + playerName;
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.json(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+    }
+
+    @OpenApi(
+            path = "/v1/players/punishment",
+            methods = {HttpMethod.POST},
+            summary = "Does a punishment to a player",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            requestBody = @OpenApiRequestBody(
+                    required = true,
+                    content = {
+                            @OpenApiContent(
+                                    mimeType = "application/x-www-form-urlencoded",
+                                    properties = {
+                                            @OpenApiContentProperty(name = "playerName", type = "string"),
+                                            @OpenApiContentProperty(name = "punishment", type = "string"),
+                                            @OpenApiContentProperty(name = "reason", type = "string"),
+                                    }
+                            )
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(type = "application/json"))
+            }
+    )
+    public void playerPunishment(Context ctx) {
+        String playerNameStr = ctx.formParam("playerName");
+        String punishment = ctx.formParam("punishment").toLowerCase();
+        String reason = ctx.formParam("reason");
+        ArrayList<String> arr = new ArrayList<String>(4);
+        arr.add("kick");
+        arr.add("ban");
+        arr.add("ipban");
+        arr.add("warn");
+        if (!arr.contains(punishment)) {
+            throw new BadRequestResponse(punishment + " command not found");
+        }
+        String command = punishment + " " + playerNameStr + " " + reason;
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.json(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+
+    }
+
+    @OpenApi(
+            path = "/v1/players/temp-punishment",
+            methods = {HttpMethod.POST},
+            summary = "Does a temp punishment to a player",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            requestBody = @OpenApiRequestBody(
+                    required = true,
+                    content = {
+                            @OpenApiContent(
+                                    mimeType = "application/x-www-form-urlencoded",
+                                    properties = {
+                                            @OpenApiContentProperty(name = "playerName", type = "string"),
+                                            @OpenApiContentProperty(name = "punishment", type = "string"),
+                                            @OpenApiContentProperty(name = "reason", type = "string"),
+                                            @OpenApiContentProperty(name = "hours", type = "number"),
+                                    }
+                            )
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = io.servertap.api.v1.models.ItemStack.class))
+            }
+    )
+    public void playerTempPunishment(Context ctx) {
+        String playerNameStr = ctx.formParam("playerName");
+        String punishment = ctx.formParam("punishment").toLowerCase();
+        String reason = ctx.formParam("reason");
+        double hours;
+        try {
+            hours = Double.parseDouble(ctx.formParam("hours"));
+            if (hours <= 0) {
+                throw new BadRequestResponse("Hours must be greater than 0.");
+            }
+        } catch (NumberFormatException e) {
+            throw new BadRequestResponse("Hours must be a valid number.");
+        }
+        ArrayList<String> arr = new ArrayList<String>(2);
+        arr.add("tempmute");
+        arr.add("tempban");
+        if (!arr.contains(punishment)) {
+            throw new BadRequestResponse(punishment + " command not found");
+        }
+        String command = punishment + " " + playerNameStr + " " + reason + " " + hours;
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.html(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+
+    }
+
+    @OpenApi(
+            path = "/v1/players/set-rank",
+            methods = {HttpMethod.POST},
+            summary = "Sets Player Rank",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            requestBody = @OpenApiRequestBody(
+                    required = true,
+                    content = {
+                            @OpenApiContent(
+                                    mimeType = "application/x-www-form-urlencoded",
+                                    properties = {
+                                            @OpenApiContentProperty(name = "voteRank", type = "string"),
+                                            @OpenApiContentProperty(name = "staffRank", type = "string"),
+                                    }
+                            )
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = io.servertap.api.v1.models.ItemStack.class))
+            }
+    )
+    public void setPlayerRank(Context ctx) {
+        String voteRank = ctx.formParam("voteRank");
+        String staffRank = ctx.formParam("staffRank");
+
+        ArrayList<String> voteRanks = new ArrayList<String>(4);
+        voteRanks.add("farmer");
+        voteRanks.add("knight");
+        voteRanks.add("minotaur");
+        voteRanks.add("dragon");
+        if (!voteRanks.contains(voteRank)) {
+            throw new BadRequestResponse(voteRank + " not found");
+        }
+
+        ArrayList<String> staffRanks = new ArrayList<String>(6);
+        voteRanks.add("owner");
+        voteRanks.add("developer");
+        voteRanks.add("sr.mod");
+        voteRanks.add("mod");
+        voteRanks.add("helper");
+        voteRanks.add("");
+
+        if (!voteRanks.contains(staffRank)) {
+            throw new BadRequestResponse(staffRank+ " not found");
+        }
+        String command = "setPlayerRank " + voteRank + " " + staffRank;
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.html(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+
+    }
+
+    @OpenApi(
+            path = "/v1/players/jail",
+            methods = {HttpMethod.POST},
+            summary = "jails a player",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            requestBody = @OpenApiRequestBody(
+                    required = true,
+                    content = {
+                            @OpenApiContent(
+                                    mimeType = "application/x-www-form-urlencoded",
+                                    properties = {
+                                            @OpenApiContentProperty(name = "playerName", type = "string"),
+                                            @OpenApiContentProperty(name = "action", type = "string"),
+                                    }
+                            )
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = io.servertap.api.v1.models.ItemStack.class))
+            }
+    )
+    public void jailPlayer(Context ctx) {
+        String playerNameStr = ctx.formParam("playerName");
+        String punishment = ctx.formParam("action").toLowerCase();
+        ArrayList<String> arr = new ArrayList<String>(3);
+        arr.add("fakeJail");
+        arr.add("inprison");
+        arr.add("release");
+        if (!arr.contains(punishment)) {
+            throw new BadRequestResponse(punishment + " command not found");
+        }
+
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        String command = "jail " + punishment + " " + playerNameStr;
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.html(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+
+    }
+
+    @OpenApi(
+            path = "/v1/players/vote/{username}",
+            methods = {HttpMethod.POST},
+            summary = "Sends a vote command",
+            tags = {"Player"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            pathParams = {
+                    @OpenApiParam(name = "uuid", description = "UUID of the player")
+            },
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(from = io.servertap.api.v1.models.ItemStack.class))
+            }
+    )
+    public void recordPlayerVote(Context ctx) {
+        String username = ctx.pathParam("username");
+        if (username.isEmpty()) throw new BadRequestResponse(Constants.PLAYER_UUID_MISSING);
+        String command = "recordPlayerVote " + username;
+        String timeRaw = "0";
+
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.html(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+
+    }
+
+
+    private CompletableFuture<List<String>> runCommandAsync(String command, long time) {
+        return new ServerExecCommandSender(main).executeCommand(command, time, TimeUnit.MILLISECONDS);
     }
 }

@@ -38,11 +38,14 @@ public class ServerApi {
     private final ScoreboardManager scoreboardManager = Bukkit.getScoreboardManager();
     private final LagDetector lagDetector;
 
-    public ServerApi(ServerTapMain main, Logger log, LagDetector lagDetector, EconomyWrapper economy) {
+    private final String websocketKey;
+
+    public ServerApi(ServerTapMain main, Logger log, LagDetector lagDetector, EconomyWrapper economy, String websocketKey) {
         this.log = log;
         this.main = main;
         this.economy = economy;
         this.lagDetector = lagDetector;
+        this.websocketKey = websocketKey;
     }
 
     @OpenApi(
@@ -58,6 +61,23 @@ public class ServerApi {
     )
     public void ping(Context ctx) {
         ctx.json("pong");
+    }
+
+    @OpenApi(
+            path = "/v1/websocket-key",
+            summary = "key!",
+            tags = {"Server"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            responses = {
+                    @OpenApiResponse(status = "200", content = @OpenApiContent(type = "application/json"))
+            }
+    )
+    public void websocketKey(Context ctx) {
+        MessageResponse message = new MessageResponse(this.websocketKey);
+
+        ctx.json(message);
     }
 
     @OpenApi(
@@ -573,7 +593,7 @@ public class ServerApi {
         ctx.json(opedPlayers);
 
     }
-
+    /*
     @OpenApi(
             path = "/v1/server/exec",
             methods = {HttpMethod.POST},
@@ -629,7 +649,79 @@ public class ServerApi {
                     throw new RuntimeException(throwable);
                 }));
     }
+    */
 
+    @OpenApi(
+            path = "/v1/server/restart",
+            methods = {HttpMethod.POST},
+            summary = "restarts the server",
+            tags = {"Server"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            responses = {
+                    @OpenApiResponse(
+                            status = "200"
+                    )
+            }
+    )
+
+    public void restartServer(Context ctx) {
+        String timeRaw = "0";
+        String command = "restart";
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.json(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+    }
+
+    @OpenApi(
+            path = "/v1/server/forceVoteTop",
+            methods = {HttpMethod.POST},
+            summary = "forces vote top",
+            tags = {"Server"},
+            headers = {
+                    @OpenApiParam(name = "key")
+            },
+            responses = {
+                    @OpenApiResponse(
+                            status = "200"
+                    )
+            }
+    )
+
+    public void forceVoteTop(Context ctx) {
+        String timeRaw = "0";
+        String command = "forceVoteTop";
+        AtomicLong time = new AtomicLong(Long.parseLong(timeRaw));
+        if (time.get() < 0) time.set(0);
+
+        ctx.future(() -> runCommandAsync(command, time.get()).thenAccept(
+                        ret -> {
+                            String output = String.join("\n", ret);
+                            if ("application/json".equalsIgnoreCase(ctx.contentType())) {
+                                ctx.json(output);
+                            } else {
+                                ctx.json(output);
+                            }
+                        }
+                )
+                .exceptionally(throwable -> {
+                    throw new RuntimeException(throwable);
+                }));
+    }
     private CompletableFuture<List<String>> runCommandAsync(String command, long time) {
         return new ServerExecCommandSender(main).executeCommand(command, time, TimeUnit.MILLISECONDS);
     }

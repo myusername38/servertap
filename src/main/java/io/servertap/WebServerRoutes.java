@@ -17,16 +17,18 @@ public final class WebServerRoutes {
     private WebServerRoutes() {}
 
     public static void addV1Routes(ServerTapMain main, Logger log, LagDetector lagDetector, WebServer webServer,
-                                   ConsoleListener consoleListener, ExternalPluginWrapperRepo externalPluginWrapperRepo) {
+                                   ConsoleListener consoleListener, ExternalPluginWrapperRepo externalPluginWrapperRepo, String websocketString) {
         PrefixedRouteBuilder pr = new PrefixedRouteBuilder(API_V1, webServer);
 
-        ApiV1Initializer api = new ApiV1Initializer(main, log, lagDetector, consoleListener, externalPluginWrapperRepo);
+        ApiV1Initializer api = new ApiV1Initializer(main, log, lagDetector, consoleListener, externalPluginWrapperRepo, websocketString);
 
         pr.get("ping", api.getServerApi()::ping);
 
         // Server routes
         pr.get("server", api.getServerApi()::serverGet);
-        pr.post("server/exec", api.getServerApi()::postCommand);
+        pr.get("websocket-key", api.getServerApi()::websocketKey);
+        pr.post("server/restart", api.getServerApi()::restartServer);
+        pr.post("server/forceVoteTop", api.getServerApi()::forceVoteTop);
         pr.get("server/ops", api.getServerApi()::getOps);
         pr.post("server/ops", api.getServerApi()::opPlayer);
         pr.delete("server/ops", api.getServerApi()::deopPlayer);
@@ -53,7 +55,13 @@ public final class WebServerRoutes {
         pr.get("players/all", api.getPlayerApi()::offlinePlayersGet);
         pr.get("players/{uuid}", api.getPlayerApi()::playerGet);
         pr.get("players/{playerUuid}/{worldUuid}/inventory", api.getPlayerApi()::getPlayerInv);
-
+        pr.post("players/action", api.getPlayerApi()::simpleAction);
+        pr.post("players/punishment", api.getPlayerApi()::playerPunishment);
+        pr.post("players/temp-punishment", api.getPlayerApi()::playerTempPunishment);
+        pr.post("players/set-rank", api.getPlayerApi()::setPlayerRank);
+        pr.post("players/jail", api.getPlayerApi()::jailPlayer);
+        pr.post("players/vote/{username}", api.getPlayerApi()::recordPlayerVote);
+        
         // Economy routes
         pr.post("economy/pay", api.getEconomyApi()::playerPay);
         pr.post("economy/debit", api.getEconomyApi()::playerDebit);
